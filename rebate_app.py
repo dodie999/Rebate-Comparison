@@ -1,190 +1,217 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import numpy as np
 
-# --- Page Configuration ---
-st.set_page_config(
-    page_title="Commercial Rebate Simulator",
-    page_icon="📈",
-    layout="wide"
-)
+# --- PAGE CONFIGURATION ---
+st.set_page_config(page_title="Eagle Chemicals Rebate Simulator", layout="wide")
 
-st.title("📈 Commercial Rebate Strategy Simulator")
-st.markdown("""
-This tool compares two distinct incentive structures:
-1.  **Standard Volume Rebate (Retroactive):** Pays a % on *all* volume once a target is reached.
-2.  **Growth Rebate (Marginal):** Pays a higher % only on volume *exceeding* a benchmark.
-""")
-
+st.title("🦅 Eagle Chemicals: Customer Rebate Simulator")
+st.markdown("### Interactive Value Calculator")
 st.markdown("---")
 
-# --- Sidebar: User Inputs ---
-st.sidebar.header("⚙️ Deal Parameters")
-
-# 1. General Settings
-st.sidebar.subheader("1. Volume Settings")
-benchmark_vol = st.sidebar.number_input(
-    "Benchmark Volume (e.g., Last Year)", 
-    value=100000, 
-    step=1000,
-    help="The baseline volume used to calculate growth."
-)
-max_view_vol = st.sidebar.slider(
-    "Chart Max Range", 
-    min_value=benchmark_vol, 
-    max_value=int(benchmark_vol*2.5), 
-    value=int(benchmark_vol*1.5)
+# --- SIDEBAR: REBATE SELECTOR ---
+st.sidebar.header("Configuration")
+rebate_type = st.sidebar.selectbox(
+    "Select Rebate Structure",
+    ("Tiered Volume (Annual)", "Growth (Over Benchmark)", "Tiered (Quarterly + Annual)")
 )
 
-# 2. Tiered Rebate Settings
-st.sidebar.subheader("2. Tiered Structure (Retroactive)")
-st.sidebar.info("Pays % on ALL volume once tier is hit.")
+# Global Input: Price
+avg_price = st.sidebar.number_input("Average Price per Tonne (EGP)", value=50000, step=1000)
 
-tier1_vol = st.sidebar.number_input("Tier 1 Threshold", value=100000, step=1000)
-tier1_pct = st.sidebar.slider("Tier 1 Rebate %", 0.0, 15.0, 2.0, 0.1, key="t1") / 100
+# ==========================================
+# 1. TIERED VOLUME (ANNUAL)
+# ==========================================
+if rebate_type == "Tiered Volume (Annual)":
+    st.sidebar.subheader("Define Annual Tiers")
+    t1_vol = st.sidebar.number_input("Tier 1 Volume (Tons)", value=48)
+    t1_pct = st.sidebar.number_input("Tier 1 Rebate (%)", value=0.75, step=0.1) / 100
+    
+    t2_vol = st.sidebar.number_input("Tier 2 Volume (Tons)", value=72)
+    t2_pct = st.sidebar.number_input("Tier 2 Rebate (%)", value=1.00, step=0.1) / 100
+    
+    t3_vol = st.sidebar.number_input("Tier 3 Volume (Tons)", value=96)
+    t3_pct = st.sidebar.number_input("Tier 3 Rebate (%)", value=1.50, step=0.1) / 100
 
-tier2_vol = st.sidebar.number_input("Tier 2 Threshold", value=120000, step=1000)
-tier2_pct = st.sidebar.slider("Tier 2 Rebate %", 0.0, 15.0, 3.0, 0.1, key="t2") / 100
+    st.subheader("📊 Annual Volume Scenario")
+    
+    # Simulation Input
+    sim_vol = st.slider("Simulate Total Annual Volume (Tons)", 0, int(t3_vol * 1.5), int(t1_vol - 5))
 
-# 3. Growth Rebate Settings
-st.sidebar.subheader("3. Growth Structure (Marginal)")
-st.sidebar.warning("Pays % ONLY on volume > Benchmark.")
-growth_pct = st.sidebar.slider("Growth Rebate %", 0.0, 30.0, 15.0, 0.5, key="g1") / 100
+    # Calculation Logic
+    current_rate = 0.0
+    if sim_vol >= t3_vol: current_rate = t3_pct
+    elif sim_vol >= t2_vol: current_rate = t2_pct
+    elif sim_vol >= t1_vol: current_rate = t1_pct
+    
+    total_rebate = sim_vol * avg_price * current_rate
+    effective_discount = current_rate * 100
 
-# --- Calculation Logic ---
-# Create a range of volumes from 80% of benchmark to Max View
-start_vol = int(benchmark_vol * 0.8)
-volumes = np.linspace(start_vol, max_view_vol, 300)
-
-data = []
-
-for v in volumes:
-    # Tiered Logic (Retroactive)
-    if v >= tier2_vol:
-        tier_payout = v * tier2_pct
-    elif v >= tier1_vol:
-        tier_payout = v * tier1_pct
+    # Metrics Row
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Projected Total Rebate", f"{total_rebate:,.0f} EGP", delta_color="normal")
+    c2.metric("Effective Discount", f"{effective_discount:.2f}%")
+    
+    # Distance to next tier
+    if sim_vol < t1_vol:
+        dist = t1_vol - sim_vol
+        c3.info(f"⚠ Buy **{dist} more tons** to unlock Tier 1!")
+    elif sim_vol < t2_vol:
+        dist = t2_vol - sim_vol
+        c3.info(f"🚀 Buy **{dist} more tons** to jump to Tier 2!")
+    elif sim_vol < t3_vol:
+        dist = t3_vol - sim_vol
+        c3.info(f"🔥 Buy **{dist} more tons** to hit MAX Tier!")
     else:
-        tier_payout = 0
-        
-    # Growth Logic (Marginal)
-    if v > benchmark_vol:
-        growth_payout = (v - benchmark_vol) * growth_pct
-    else:
-        growth_payout = 0
-        
-    data.append({
-        "Volume": v,
-        "Tiered Payout": tier_payout,
-        "Growth Payout": growth_payout,
-        "Difference": growth_payout - tier_payout
-    })
+        c3.success("🏆 Maximum Tier Achieved!")
 
-df = pd.DataFrame(data)
+    # Visualization: The "Cliff" Chart
+    x_vals = list(range(0, int(t3_vol * 1.3)))
+    y_vals = []
+    for x in x_vals:
+        r = 0
+        if x >= t3_vol: r = t3_pct
+        elif x >= t2_vol: r = t2_pct
+        elif x >= t1_vol: r = t1_pct
+        y_vals.append(x * avg_price * r)
 
-# Find Crossover Point
-crossover_df = df[(df["Volume"] > benchmark_vol) & (df["Difference"] > 0)]
-if not crossover_df.empty:
-    crossover_vol = crossover_df.iloc[0]["Volume"]
-    crossover_msg = f"🚀 The Growth Deal becomes more profitable for the buyer at **{crossover_vol:,.0f} units**."
-    crossover_color = "green"
-    crossover_found = True
-else:
-    crossover_msg = "⚠️ The Growth Deal never beats the Tiered Deal in this volume range."
-    crossover_color = "red"
-    crossover_found = False
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='lines', name='Rebate Value', line=dict(color='#2E86C1', width=3)))
+    fig.add_trace(go.Scatter(x=[sim_vol], y=[total_rebate], mode='markers', name='You Are Here', marker=dict(color='red', size=12)))
+    
+    # Add Tier Lines
+    fig.add_vline(x=t1_vol, line_dash="dash", annotation_text="Tier 1")
+    fig.add_vline(x=t2_vol, line_dash="dash", annotation_text="Tier 2")
+    fig.add_vline(x=t3_vol, line_dash="dash", annotation_text="Tier 3")
 
-# --- Visualization (Plotly) ---
-fig = go.Figure()
-
-# Tiered Line
-fig.add_trace(go.Scatter(
-    x=df["Volume"], 
-    y=df["Tiered Payout"],
-    mode='lines',
-    name=f'Tiered ({tier1_pct*100:.1f}% / {tier2_pct*100:.1f}%)',
-    line=dict(color='#1f77b4', width=3),
-    hovertemplate='Vol: %{x:,.0f}<br>Pay: $%{y:,.0f}'
-))
-
-# Growth Line
-fig.add_trace(go.Scatter(
-    x=df["Volume"], 
-    y=df["Growth Payout"],
-    mode='lines',
-    name=f'Growth ({growth_pct*100:.1f}% > {benchmark_vol/1000:.0f}k)',
-    line=dict(color='#ff7f0e', width=3, dash='dash'),
-    hovertemplate='Vol: %{x:,.0f}<br>Pay: $%{y:,.0f}'
-))
-
-# Crossover Marker
-if crossover_found:
-    crossover_y = crossover_df.iloc[0]["Growth Payout"]
-    fig.add_trace(go.Scatter(
-        x=[crossover_vol],
-        y=[crossover_y],
-        mode='markers',
-        name='Crossover Point',
-        marker=dict(color='red', size=12, symbol='x')
-    ))
-
-# Formatting
-fig.update_layout(
-    xaxis_title="Total Volume Purchased",
-    yaxis_title="Total Rebate Paid ($)",
-    hovermode="x unified",
-    legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
-    height=550,
-    margin=dict(l=20, r=20, t=40, b=20)
-)
-
-# --- Layout Output ---
-col1, col2 = st.columns([3, 1])
-
-with col1:
+    fig.update_layout(title="Potential Earnings (The 'Cliff' Effect)", xaxis_title="Annual Volume (Tons)", yaxis_title="Rebate Value (EGP)")
     st.plotly_chart(fig, use_container_width=True)
 
-with col2:
-    st.subheader("Analysis")
-    st.markdown(f":{crossover_color}[{crossover_msg}]")
+# ==========================================
+# 2. GROWTH REBATE
+# ==========================================
+elif rebate_type == "Growth (Over Benchmark)":
+    st.sidebar.subheader("Growth Settings")
+    benchmark_vol = st.sidebar.number_input("Benchmark Volume (Last Year)", value=100)
+    growth_rebate_pct = st.sidebar.number_input("Growth Rebate (%)", value=5.0) / 100
     
-    st.markdown("---")
-    st.markdown("### 🔍 Scenario Check")
-    check_vol = st.number_input("Test a specific volume:", value=int(benchmark_vol*1.25), step=1000)
+    st.subheader("🚀 Growth Accelerator")
     
-    # Calculate for single point
-    if check_vol >= tier2_vol: t_pay = check_vol * tier2_pct
-    elif check_vol >= tier1_vol: t_pay = check_vol * tier1_pct
-    else: t_pay = 0
+    sim_vol_growth = st.slider("Simulate Total Volume", 0, int(benchmark_vol * 2), int(benchmark_vol))
     
-    if check_vol > benchmark_vol: g_pay = (check_vol - benchmark_vol) * growth_pct
-    else: g_pay = 0
+    growth_vol = max(0, sim_vol_growth - benchmark_vol)
+    growth_payout = growth_vol * avg_price * growth_rebate_pct
     
-    diff = g_pay - t_pay
+    # Metrics
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Growth Volume", f"{growth_vol} Tons")
+    c2.metric("Growth Payout", f"{growth_payout:,.0f} EGP")
     
-    st.metric("Tiered Payout", f"${t_pay:,.0f}")
-    st.metric(
-        "Growth Payout", 
-        f"${g_pay:,.0f}", 
-        delta=f"{diff:,.0f}", 
-        delta_color="normal"
-    )
-    
-    if diff > 0:
-        st.success("Growth deal is better.")
-    elif diff < 0:
-        st.info("Tiered deal is better.")
+    # Implied Margin Calc
+    if growth_vol > 0:
+        per_ton_value = growth_payout / growth_vol
+        c3.metric("Extra Value per Growth Ton", f"{per_ton_value:,.0f} EGP/ton")
     else:
-        st.warning("Payouts are equal.")
+        c3.metric("Status", "Below Benchmark", delta_color="inverse")
 
-# Data Table
-with st.expander("📋 View Calculation Table"):
-    st.dataframe(
-        df.style.format({
-            "Volume": "{:,.0f}", 
-            "Tiered Payout": "${:,.2f}", 
-            "Growth Payout": "${:,.2f}", 
-            "Difference": "${:,.2f}"
-        })
-    )
+    # Visualization: Waterfall / Area
+    fig = go.Figure()
+    
+    # Base Bar
+    fig.add_trace(go.Bar(
+        x=['Volume'], 
+        y=[min(sim_vol_growth, benchmark_vol)], 
+        name='Benchmark (Standard)', 
+        marker_color='lightgrey'
+    ))
+    
+    # Growth Bar
+    if growth_vol > 0:
+        fig.add_trace(go.Bar(
+            x=['Volume'], 
+            y=[growth_vol], 
+            name='Growth (Rebate Active)', 
+            marker_color='#28B463',
+            text=f"+{growth_payout:,.0f} EGP",
+            textposition='auto'
+        ))
+
+    fig.update_layout(barmode='stack', title="Volume Split: Standard vs. Growth", yaxis_title="Tons")
+    st.plotly_chart(fig, use_container_width=True)
+
+# ==========================================
+# 3. QUARTERLY + ANNUAL (COMPLEX)
+# ==========================================
+elif rebate_type == "Tiered (Quarterly + Annual)":
+    
+    # --- INPUTS ---
+    with st.sidebar.expander("1. Annual Tiers (EOY Bonus)", expanded=False):
+        at1_vol = st.number_input("Annual T1 Vol", 200); at1_pct = st.number_input("Annual T1 %", 0.5)/100
+        at2_vol = st.number_input("Annual T2 Vol", 300); at2_pct = st.number_input("Annual T2 %", 1.0)/100
+        at3_vol = st.number_input("Annual T3 Vol", 400); at3_pct = st.number_input("Annual T3 %", 1.5)/100
+
+    with st.sidebar.expander("2. Quarterly Tiers (Recurring)", expanded=True):
+        qt1_vol = st.number_input("Quarterly T1 Vol", 50); qt1_pct = st.number_input("Quarterly T1 %", 0.5)/100
+        qt2_vol = st.number_input("Quarterly T2 Vol", 75); qt2_pct = st.number_input("Quarterly T2 %", 0.75)/100
+        qt3_vol = st.number_input("Quarterly T3 Vol", 100); qt3_pct = st.number_input("Quarterly T3 %", 1.0)/100
+
+    st.subheader("📅 Quarterly Progress & Annual Bonus")
+    
+    # Simulation Sliders for Quarters
+    col1, col2, col3, col4 = st.columns(4)
+    with col1: q1_v = st.number_input("Q1 Volume", value=60)
+    with col2: q2_v = st.number_input("Q2 Volume", value=80)
+    with col3: q3_v = st.number_input("Q3 Volume", value=40)
+    with col4: q4_v = st.number_input("Q4 Volume", value=0) # Future
+
+    # --- CALCULATIONS ---
+    
+    # Helper to get Q rate
+    def get_q_rate(v):
+        if v >= qt3_vol: return qt3_pct
+        elif v >= qt2_vol: return qt2_pct
+        elif v >= qt1_vol: return qt1_pct
+        return 0.0
+
+    q_volumes = [q1_v, q2_v, q3_v, q4_v]
+    q_rebates = [v * avg_price * get_q_rate(v) for v in q_volumes]
+    
+    total_q_rebate = sum(q_rebates)
+    total_year_vol = sum(q_volumes)
+
+    # Annual Logic
+    year_rate = 0.0
+    if total_year_vol >= at3_vol: year_rate = at3_pct
+    elif total_year_vol >= at2_vol: year_rate = at2_pct
+    elif total_year_vol >= at1_vol: year_rate = at1_pct
+    
+    annual_bonus = total_year_vol * avg_price * year_rate
+    grand_total = total_q_rebate + annual_bonus
+
+    # --- METRICS ---
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total Quarterly Credit Notes", f"{total_q_rebate:,.0f} EGP")
+    m2.metric("End of Year Bonus", f"{annual_bonus:,.0f} EGP")
+    m3.metric("GRAND TOTAL VALUE", f"{grand_total:,.0f} EGP", delta="Total Cash Back")
+
+    # --- VISUALIZATION: The Bank Builder ---
+    quarters = ['Q1', 'Q2', 'Q3', 'Q4', 'EOY Bonus']
+    values = q_rebates + [annual_bonus]
+    colors = ['#3498DB', '#3498DB', '#3498DB', '#3498DB', '#F1C40F'] # Blue for Qs, Gold for EOY
+
+    fig = go.Figure(go.Bar(
+        x=quarters,
+        y=values,
+        marker_color=colors,
+        text=[f"{v:,.0f}" for v in values],
+        textposition='auto'
+    ))
+    
+    fig.update_layout(title="Your Rebate Stack (Quarterly Credits + EOY Check)", yaxis_title="Rebate Value (EGP)")
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Status Message
+    if annual_bonus == 0:
+        st.warning(f"⚠ You are currently missing the Annual Bonus! Total Volume: {total_year_vol}. Need {at1_vol} to unlock.")
+    else:
+        st.success(f"🎉 You have unlocked the Annual Bonus Tier!")
