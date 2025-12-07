@@ -13,7 +13,7 @@ st.markdown("---")
 st.sidebar.header("Configuration")
 rebate_type = st.sidebar.selectbox(
     "Select Rebate Structure",
-    ("Tiered Volume (Annual)", "Growth (Over Benchmark)", "Tiered (Quarterly + Annual)")
+    ("Tiered Volume (Annual)", "Growth (Over Benchmark)", "Tiered Retention (Quarterly + Annual)")
 )
 
 # Global Input: Price
@@ -150,7 +150,7 @@ elif rebate_type == "Growth (Over Benchmark)":
 # ==========================================
 # 3. QUARTERLY + ANNUAL (COMPLEX)
 # ==========================================
-elif rebate_type == "Tiered (Quarterly + Annual)":
+elif rebate_type == "Tiered Retention (Quarterly + Annual)":
     
     # --- INPUTS ---
     # Updated Defaults for BOTH: 0.5%, 0.75%, 1.0%
